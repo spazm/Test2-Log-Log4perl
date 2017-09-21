@@ -46,7 +46,7 @@ Test::Log::Log4perl - test log4perl
     my $foo = Test::Log::Log4perl->expect(['foo.bar.quux', warn => qr/hello/ ]);
     # ... do something that should log 'hello'
   }
-  # $foo goes out of scope; this triggers the test.  
+  # $foo goes out of scope; this triggers the test.
 
 =head1 DESCRIPTION
 
@@ -156,9 +156,9 @@ change the behavior of this (and only this) test.  See below.
 =cut
 
 # convet a string priority into a digit one
-sub _to_d($)
+sub _to_d
 {
-  my $priority = shift;
+  my ($class, $priority) = @_;
 
   # check the priority is all digits
   if ($priority =~ /\D/)
@@ -175,27 +175,84 @@ sub _to_d($)
 our @expected;
 our @logged;
 
+sub expected {
+  my $class = shift;
+  \@expected
+}
+
+sub clear_expected {
+  my $class = shift;
+  @expected = ();
+  return;
+}
+
+# note, this will always be @Test::Log::Log4perl::logged, even in subclass.
+sub logged {
+  my $class = shift;
+  \@logged
+}
+
+sub clear_logged {
+  my $class = shift;
+  @logged = ();
+}
+
+sub reset_data {
+  my $class = shift;
+  $class->clear_expected();
+  $class->clear_logged();
+}
+
+sub _set_ignore_priority {
+  my ($class, %args) = @_;
+
+  my $ignore_priority = $args{ignore_priority};
+
+  if ($args{ignore_everything})
+    { $ignore_priority = "everything" }
+  if ($args{ignore_nothing})
+    { $ignore_priority = "nothing" }
+  if (defined $ignore_priority)
+  {
+    my $ignore_priority_d = $class->_to_d( $ignore_priority );
+    $class->interception_class->set_temp("ignore_priority", $ignore_priority_d )
+  };
+}
+
+sub _loggers {
+  my $class = shift;
+  values %$Log::Log4perl::Logger::LOGGERS_BY_NAME;
+}
+
+sub _turn_on_intercept_code {
+  my $class = shift;
+  foreach my $logger ($class->_loggers)
+  {
+    bless $logger, $class->interception_class;
+  }
+  return
+}
+
+sub _turn_off_intercept_code {
+  my $class = shift;
+  foreach my $logger ($class->_loggers)
+  {
+    bless $logger, $class->original_class
+  }
+}
+
 sub start
 {
   my $class = shift;
   my %args = @_;
 
-  # empty the record
-  @logged = ();
-  @expected = ();
+  $class->reset_data();
   $class->interception_class->reset_temp;
 
-  # the priority
-  if ($args{ignore_everything})
-    { $args{ignore_priority} = "everything" }
-  if ($args{ignore_nothing})
-    { $args{ignore_priority} = "nothing" }
-  if (exists $args{ignore_priority})
-    { $class->interception_class->set_temp("ignore_priority",_to_d $args{ignore_priority}) }
+  $class->_set_ignore_priority(%args);
 
   # turn on the interception code
-   foreach (values %$Log::Log4perl::Logger::LOGGERS_BY_NAME)
-    { bless $_, $class->interception_class }
+  $class->_turn_on_intercept_code();
 }
 
 =item debug(@what)
@@ -245,62 +302,88 @@ it was originally directed in the config.
 
 =cut
 
+
 # eeek, the hard bit
 sub end
 {
   my $class = shift;
-  my $name = shift || "Log4perl test";
+  my $name = shift || $class->test_name;
 
   $class->interception_class->set_temp("ended", 1);
-  # turn off the interception code
-  foreach (values %$Log::Log4perl::Logger::LOGGERS_BY_NAME)
-    { bless $_, $class->original_class }
+  $class->_turn_off_intercept_code();
 
-  my $no;
-  while (@logged)
   {
-    $no++;
-
-    my $logged   = shift @logged;
-    my $expected = shift @expected;
-
-    # not expecting anything?
-    unless ($expected)
-    {
-      $Tester->ok(0,$name);
-      $Tester->diag("Unexpected $logged->{priority} of type '$logged->{category}':\n");
-      $Tester->diag("  '$logged->{message}'");
-      return 0;
-    }
-
-    # was this message what we expected?
-    # ...
-    my %wrong = map { $_ => 1 }
-                 grep { !_matches($logged->{ $_ }, $expected->{ $_ }) }
-                 qw(category message priority);
-    if (%wrong)
-    {
-      $Tester->ok(0, $name);
-      $Tester->diag("Message $no logged wasn't what we expected:");
-      foreach my $thingy (qw(category priority message))
-      {
-        if ($wrong{ $thingy })
-        {
-          $Tester->diag(sprintf(q{ %8s was '%s'}, $thingy, $logged->{ $thingy }));
-          if (ref($expected->{ $thingy }) && ref($expected->{ $thingy }) eq "Regexp")
-            { $Tester->diag("     not like '$expected->{$thingy}'") }
-          else
-            { $Tester->diag("          not '$expected->{$thingy}'") }         
-        }
-      }
-      $Tester->diag(" (Offending log call from line $logged->{line} in $logged->{filename})");
-
-      return 0
-
-    }
+    local $Test::Builder::Level = $Test::Builder::Level + 1;
+    return 0 unless $class->test_all_messages($name, $class->logged, $class->expected);
   }
 
-  # expected something but didn't get it?
+  $Tester->ok(1,$name);
+  return 1;
+}
+
+sub test_name { "Log4perl test" }
+
+sub test_all_messages {
+  my ($class, $name, $all_logged, $all_expected) = @_;
+
+  local $Test::Builder::Level = $Test::Builder::Level + 1;
+
+  my $num = 0;
+  while (@$all_logged) {
+
+    $num++;
+
+    my $logged   = shift @$all_logged;
+    my $expected = shift @$all_expected;
+
+    return 0 unless $class->test_message($num, $name, $logged, $expected);
+  }
+  return 0 unless $class->test_extra_expected($name, @$all_expected);
+
+  return 1;
+}
+
+sub test_message {
+  my ($class, $num, $name, $logged, $expected ) = @_;
+
+  # not expecting anything?
+  unless ($expected)
+  {
+    $Tester->ok(0,$name);
+    $Tester->diag("Unexpected $logged->{priority} of type '$logged->{category}':\n");
+    $Tester->diag("  '$logged->{message}'");
+    return 0;
+  }
+
+  # was this message what we expected?
+  # ...
+  my %wrong = map { $_ => 1 }
+                grep { !$class->_matches($logged->{ $_ }, $expected->{ $_ }) }
+                qw(category message priority);
+  if (%wrong)
+  {
+    $Tester->ok(0, $name);
+    $Tester->diag("Message $num logged wasn't what we expected:");
+    foreach my $thingy (qw(category priority message))
+    {
+      if ($wrong{ $thingy })
+      {
+        $Tester->diag(sprintf(q{ %8s was '%s'}, $thingy, $logged->{ $thingy }));
+        if (ref($expected->{ $thingy }) && ref($expected->{ $thingy }) eq "Regexp")
+          { $Tester->diag("     not like '$expected->{$thingy}'") }
+        else
+          { $Tester->diag("          not '$expected->{$thingy}'") }
+      }
+    }
+    $Tester->diag(" (Offending log call from line $logged->{line} in $logged->{filename})");
+
+    return 0;
+  }
+  return 1;
+}
+
+sub test_extra_expected {
+  my ($class, $name, @expected) = @_;
   if (@expected)
   {
     $Tester->ok(0, $name);
@@ -309,14 +392,13 @@ sub end
     $Tester->diag("  '$expected[0]{message}'");
     return 0;
   }
-
-  $Tester->ok(1,$name);
   return 1;
 }
 
 # this is essentially a trivial implementation of perl 6's smart match operator
 sub _matches
 {
+  my $class    = shift;
   my $got      = shift;
   my $expected = shift;
 
@@ -443,7 +525,7 @@ Obviously, you may temporarily override whatever permanent.
 sub ignore_priority
 {
   my $class = shift;
-  my $p = _to_d shift;
+  my $p = $class->_to_d( shift);
   $class->interception_class->set_temp("ignore_priority", $p);
   $class->interception_class->set_perm("ignore_priority", $p);
 }
@@ -518,17 +600,25 @@ sub log
     (undef, $filename, $line) = caller($level++);
   } while ($filename eq $cur_filename || $filename eq $INC{"Log/Log4perl/Logger.pm"});
 
-  # log it
-  push @Test::Log::Log4perl::logged, {
-    category => $self->{category},  # oops, there goes encapsulation
+ # prepare message
+ my $msg = {
+    category => $self->{category},
     priority => $priority_name,
     message  => $message,
     filename => $filename,
     line     => $line,
   };
 
+  # log it
+  $self->_log_message($msg);
+
   return;
 }
+
+sub _log_message {
+  my ($self, $msg) = @_;
+  push @Test::Log::Log4perl::logged, $msg;
+};
 
 sub _cur_filename { (caller)[1] }
 

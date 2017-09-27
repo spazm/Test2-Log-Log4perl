@@ -4,8 +4,7 @@ use warnings;
 
 use 5.8.8;
 
-use Test::Builder;
-my $Tester = Test::Builder->new();
+use Test2::API qw/context/;
 
 use Carp qw(croak);
 use Scalar::Util qw(blessed);
@@ -309,15 +308,18 @@ sub end
   my $class = shift;
   my $name = shift || $class->test_name;
 
+  my $ctx = context();
+
   $class->interception_class->set_temp("ended", 1);
   $class->_turn_off_intercept_code();
 
-  {
-    local $Test::Builder::Level = $Test::Builder::Level + 1;
-    return 0 unless $class->test_all_messages($name, $class->logged, $class->expected);
-  }
+  unless ($class->test_all_messages($name, $class->logged, $class->expected)){
+    $ctx->release();
+    return 0
+  };
 
-  $Tester->ok(1,$name);
+  $ctx->ok(1, $name);
+  $ctx->release();
   return 1;
 }
 
@@ -325,8 +327,7 @@ sub test_name { "Log4perl test" }
 
 sub test_all_messages {
   my ($class, $name, $all_logged, $all_expected) = @_;
-
-  local $Test::Builder::Level = $Test::Builder::Level + 1;
+  my $ctx = context();
 
   my $num = 0;
   while (@$all_logged) {
@@ -336,22 +337,32 @@ sub test_all_messages {
     my $logged   = shift @$all_logged;
     my $expected = shift @$all_expected;
 
-    return 0 unless $class->test_message($num, $name, $logged, $expected);
+    unless ($class->test_message($num, $name, $logged, $expected)) {
+      $ctx->release();
+      return 0
+    }
   }
-  return 0 unless $class->test_extra_expected($name, @$all_expected);
+  unless ($class->test_extra_expected($name, @$all_expected)) {
+    $ctx->release();
+    return 0
+  }
 
+  $ctx->release();
   return 1;
 }
 
 sub test_message {
   my ($class, $num, $name, $logged, $expected ) = @_;
+  my $ctx = context();
 
   # not expecting anything?
   unless ($expected)
   {
-    $Tester->ok(0,$name);
-    $Tester->diag("Unexpected $logged->{priority} of type '$logged->{category}':\n");
-    $Tester->diag("  '$logged->{message}'");
+    $ctx->ok(0,$name);
+    $ctx->diag("Unexpected $logged->{priority} of type '$logged->{category}':\n");
+    $ctx->diag("  '$logged->{message}'");
+
+    $ctx->release();
     return 0;
   }
 
@@ -362,36 +373,41 @@ sub test_message {
                 qw(category message priority);
   if (%wrong)
   {
-    $Tester->ok(0, $name);
-    $Tester->diag("Message $num logged wasn't what we expected:");
+    $ctx->ok(0, $name);
+    $ctx->diag("Message $num logged wasn't what we expected:");
     foreach my $thingy (qw(category priority message))
     {
       if ($wrong{ $thingy })
       {
-        $Tester->diag(sprintf(q{ %8s was '%s'}, $thingy, $logged->{ $thingy }));
+        $ctx->diag(sprintf(q{ %8s was '%s'}, $thingy, $logged->{ $thingy }));
         if (ref($expected->{ $thingy }) && ref($expected->{ $thingy }) eq "Regexp")
-          { $Tester->diag("     not like '$expected->{$thingy}'") }
+          { $ctx->diag("     not like '$expected->{$thingy}'") }
         else
-          { $Tester->diag("          not '$expected->{$thingy}'") }
+          { $ctx->diag("          not '$expected->{$thingy}'") }
       }
     }
-    $Tester->diag(" (Offending log call from line $logged->{line} in $logged->{filename})");
+    $ctx->diag(" (Offending log call from line $logged->{line} in $logged->{filename})");
 
+    $ctx->release();
     return 0;
   }
+  $ctx->release();
   return 1;
 }
 
 sub test_extra_expected {
   my ($class, $name, @expected) = @_;
+  my $ctx = context();
   if (@expected)
   {
-    $Tester->ok(0, $name);
-    $Tester->diag("Ended logging run, but still expecting ".@expected." more log(s)");
-    $Tester->diag("Expecting $expected[0]{priority} of type '$expected[0]{category}' next:");
-    $Tester->diag("  '$expected[0]{message}'");
+    $ctx->ok(0, $name);
+    $ctx->diag("Ended logging run, but still expecting ".@expected." more log(s)");
+    $ctx->diag("Expecting $expected[0]{priority} of type '$expected[0]{category}' next:");
+    $ctx->diag("  '$expected[0]{message}'");
+    $ctx->release();
     return 0;
   }
+  $ctx->release();
   return 1;
 }
 

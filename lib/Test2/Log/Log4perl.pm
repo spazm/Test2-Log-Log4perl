@@ -661,11 +661,13 @@ creating new appenders, etc...
 
 =head1 AUTHOR
 
+  Andrew Grangaard <spazm@cpan.org>
   Chia-liang Kao <clkao@clkao.org>
   Mark Fowler <mark@twoshortplanks.com>
 
 =head1 COPYRIGHT
 
+  Copyright 2017 Andrew Grangaard all rights reserved.
   Copyright 2010 Chia-liang Kao all rights reserved.
   Copyright 2005 Fotango Ltd all rights reserved.
 

@@ -418,27 +418,11 @@ sub _matches
   my $got      = shift;
   my $expected = shift;
 
-  my $ref = ref($expected);
+  use Test2::Compare qw/compare relaxed_convert/;
 
-  # compare as a string
-  unless ($ref)
-   { return $expected eq $got }
-
-  # compare a regex?
-  if (ref($expected) eq "Regexp")
-   { return $got =~ $expected }
-
-  # check if it's a reference to something, and die
-  if (!blessed($expected))
-   { croak "Don't know how to compare a reference to a $ref" }
-
-  # it's an object.  Is that overloaded in some way?
-  # (note we avoid calling overload::Overloaded unless someone has used
-  # the module first)
-  if (defined(&overload::Overloaded) && overload::Overloaded($expected))
-   { return $expected eq $got }
-   
-  croak "Don't know how to compare object $ref"; 
+  my $delta = compare($got, $expected, \&relaxed_convert);
+  # delta is a beautiful comparison object, and we downcast to a bool
+  return !$delta;
 }
 
 =back

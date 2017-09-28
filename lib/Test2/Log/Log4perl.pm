@@ -4,7 +4,9 @@ use warnings;
 
 use 5.8.8;
 
-use Test2::API qw/context/;
+use Test2::API qw(context);
+use Test2::Tools::Compare qw(like);
+use Test2::Tools::Explain qw(explain);
 
 use Carp qw(croak);
 use Scalar::Util qw(blessed);
@@ -348,7 +350,6 @@ sub end
     return 0
   };
 
-  $ctx->ok(1, $name);
   $ctx->release();
   return 1;
 }
@@ -388,41 +389,17 @@ sub test_message {
   # not expecting anything?
   unless ($expected)
   {
-    $ctx->ok(0,$name);
+    $ctx->ok(0,"$name - $num");
     $ctx->diag("Unexpected $logged->{priority} of type '$logged->{category}':\n");
-    $ctx->diag("  '$logged->{message}'");
+    $ctx->diag(explain($logged->{message}));
 
     $ctx->release();
     return 0;
   }
 
-  # was this message what we expected?
-  # ...
-  my %wrong = map { $_ => 1 }
-                grep { !$class->_matches($logged->{ $_ }, $expected->{ $_ }) }
-                qw(category message priority);
-  if (%wrong)
-  {
-    $ctx->ok(0, $name);
-    $ctx->diag("Message $num logged wasn't what we expected:");
-    foreach my $thingy (qw(category priority message))
-    {
-      if ($wrong{ $thingy })
-      {
-        $ctx->diag(sprintf(q{ %8s was '%s'}, $thingy, $logged->{ $thingy }));
-        if (ref($expected->{ $thingy }) && ref($expected->{ $thingy }) eq "Regexp")
-          { $ctx->diag("     not like '$expected->{$thingy}'") }
-        else
-          { $ctx->diag("          not '$expected->{$thingy}'") }
-      }
-    }
-    $ctx->diag(" (Offending log call from line $logged->{line} in $logged->{filename})");
-
-    $ctx->release();
-    return 0;
-  }
-  $ctx->release();
-  return 1;
+  my $val = like($logged, $expected, "$name - $num");
+  $ctx->release;
+  return $val;
 }
 
 sub test_extra_expected {

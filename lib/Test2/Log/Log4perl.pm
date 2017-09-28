@@ -173,6 +173,7 @@ sub _to_d
 # the list of things we've stored so far
 our @expected;
 our @logged;
+our $watched_categories = {};
 
 sub expected {
   my $class = shift;
@@ -194,6 +195,28 @@ sub logged {
 sub clear_logged {
   my $class = shift;
   @logged = ();
+}
+
+sub watched_categories {
+  my $class = shift;
+  return keys %$watched_categories;
+}
+
+sub clear_watched_categories {
+  my $class = shift;
+  $watched_categories = {};
+}
+
+sub watch_category {
+  my $class = shift;
+  my $category = shift or die;
+  $watched_categories->{$category} = 1;
+}
+
+sub unwatch_category {
+  my $class = shift;
+  my $category = shift or die;
+  delete $watched_categories->{$category};
 }
 
 sub reset_data {
@@ -220,7 +243,14 @@ sub _set_ignore_priority {
 
 sub _loggers {
   my $class = shift;
-  values %$Log::Log4perl::Logger::LOGGERS_BY_NAME;
+  if (my @categories = $class->watched_categories ) {
+    return grep { defined $_ }
+    map  { $Log::Log4perl::Logger::LOGGERS_BY_NAME->{$_} }
+    @categories;
+  } else {
+    return values %$Log::Log4perl::Logger::LOGGERS_BY_NAME;
+  }
+
 }
 
 sub _turn_on_intercept_code {
@@ -459,7 +489,7 @@ sub suppress_logging
   return if $ENV{NO_SUPPRESS_LOGGING};
 
   # tell this to ignore everything.
-   foreach (values %$Log::Log4perl::Logger::LOGGERS_BY_NAME)
+   foreach ($class->_loggers())
     { bless $_, $class->ignore_all_class }
 }
 

@@ -8,9 +8,11 @@
 use strict;
 use warnings;
 
-# useful diagnostic modules that's good to have loaded
-use Data::Dumper;
-use Devel::Peek;
+use Test2::V0;
+use Test2::Tools::Explain qw(explain);
+use Test2::Tools::Exception qw/lives dies/;
+
+use Test2::Log::Log4perl;
 
 # colourising the output if we want to
 use Term::ANSIColor qw(:constants);
@@ -19,9 +21,6 @@ $Term::ANSIColor::AUTORESET = 1;
 ###################################
 # user editable parts
 
-# start the tests
-use Test::More;
-use Test2::Log::Log4perl;
 
 ok(Test2::Log::Log4perl->_matches("foo", "foo"), "foo foo");
 ok(!Test2::Log::Log4perl->_matches("foo", "bar"), "foo bar");

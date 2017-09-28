@@ -3,266 +3,342 @@
 use strict;
 use warnings;
 
-use Log::Log4perl;
-# do some setup here...honest guv
+use Test2::V0;
+use Test2::Tools::Explain qw(explain);
+use Test2::Tools::Exception qw/lives dies/;
 
-use Test::More tests => 2;
-use Test::Builder::Tester;
+use Log::Log4perl;
 use Test2::Log::Log4perl;
-use Test::Exception;
 
 my $logger   = Log::Log4perl->get_logger("Foo");
 my $tlogger  = Test2::Log::Log4perl->get_logger("Foo");
 my $t2logger = Test2::Log::Log4perl->get_logger("Bar");
 
 ########################################################
-
 # test that we ignore some priorities
 
-test_out("ok 1 - Log4perl test");
+like(
+  intercept {
+    Test2::Log::Log4perl->start(
+      ignore_priority => "warn",
+    );
+    $tlogger->error("my hair is on fire!");
 
-Test2::Log::Log4perl->start(
-  ignore_priority => "warn",
+    $logger->trace("ignore ignore ignore");
+    $logger->debug("ignore me");
+    $logger->info("ignore me too");
+    $logger->warn("ignore me as well");
+    $logger->error("my hair is on fire!");
+
+    Test2::Log::Log4perl->end();
+  },
+  array {
+      event Ok => sub {
+        call pass => 1
+      }
+  },
+  "ignore_priority warn",
 );
-
-$tlogger->error("my hair is on fire!");
-$logger->trace("ignore ignore ignore");
-$logger->debug("ignore me");
-$logger->info("ignore me too");
-$logger->warn("ignore me as well");
-$logger->error("my hair is on fire!");
-
-Test2::Log::Log4perl->end();
-
-# but they go back at the start of the next thing
-
-test_out("not ok 2 - Log4perl test");
-test_fail(+16);
-test_diag("Message 1 logged wasn't what we expected:");
-test_diag(" priority was 'debug'");
-test_diag("          not 'error'");
-test_diag("  message was 'ignore me'");
-test_diag("          not 'my hair is on fire!'");
-test_diag(" (Offending log call from line ".(__LINE__+4)." in ".filename().")");
-Test2::Log::Log4perl->start();
-
-$tlogger->error("my hair is on fire!");
-$logger->debug("ignore me");
-$logger->trace("ignore ignore ignore");
-$logger->info("ignore me too");
-$logger->warn("ignore me as well");
-$logger->error("my hair is on fire!");
-
-Test2::Log::Log4perl->end();
-
-# test that we can ignore everything
-
-test_out("ok 3 - Log4perl test");
-
-Test2::Log::Log4perl->start(
-  ignore_priority => "everything",
-);
-
-$logger->debug("ignore me");
-$logger->trace("ignore ignore ignore");
-$logger->info("ignore me too");
-$logger->warn("ignore me as well");
-$logger->error("ignore with pleasure");
-$logger->fatal("ignore this finally");
-
-Test2::Log::Log4perl->end();
-
-# but they go back at the start of the next thing
-
-test_out("not ok 4 - Log4perl test");
-test_fail(+16);
-test_diag("Message 1 logged wasn't what we expected:");
-test_diag(" priority was 'debug'");
-test_diag("          not 'error'");
-test_diag("  message was 'ignore me'");
-test_diag("          not 'my hair is on fire!'");
-test_diag(" (Offending log call from line ".(__LINE__+4)." in ".filename().")");
-Test2::Log::Log4perl->start();
-
-$tlogger->error("my hair is on fire!");
-$logger->debug("ignore me");
-$logger->trace("ignore ignore ignore");
-$logger->info("ignore me too");
-$logger->warn("ignore me as well");
-$logger->error("my hair is on fire!");
-
-Test2::Log::Log4perl->end();
-
-test_test("ignoring priority");
 
 ########################################################
+# but they go back at the start of the next thing
+#
+like(
+  intercept {
+    Test2::Log::Log4perl->start();
 
-# test that we ignore some priorities forever
+    $tlogger->error("my hair is on fire!");
+    $logger->debug("ignore me");
+    $logger->trace("ignore ignore ignore");
+    $logger->info("ignore me too");
+    $logger->warn("ignore me as well");
+    $logger->error("my hair is on fire!");
 
-test_out("ok 1 - Log4perl test");
-
-Test2::Log::Log4perl->start(
-  # this should be overriden
-  ignore_priority => "error",
+    Test2::Log::Log4perl->end();
+  },
+  array {
+      fail_events Ok => sub {
+        call pass => 0;
+      };
+      event Diag => { message => qr/{message}.*{priority}/s };
+  },
+  "reset ignore_priority",
 );
 
-Test2::Log::Log4perl->ignore_priority("warn");
+########################################################
+# test that we can ignore everything
 
-$tlogger->error("my hair is on fire!");
-$logger->debug("ignore me");
-$logger->trace("ignore ignore ignore");
-$logger->info("ignore me too");
-$logger->warn("ignore me as well");
-$logger->error("my hair is on fire!");
+like(
+  intercept {
+    Test2::Log::Log4perl->start(
+      ignore_priority => "everything",
+    );
 
-Test2::Log::Log4perl->end();
+    $logger->debug("ignore me");
+    $logger->trace("ignore ignore ignore");
+    $logger->info("ignore me too");
+    $logger->warn("ignore me as well");
+    $logger->error("ignore with pleasure");
+    $logger->fatal("ignore this finally");
 
+    Test2::Log::Log4perl->end();
+  },
+  array {
+      end;
+  },
+  "ignore_priority => everything triggers zero tests",
+);
+
+########################################################
+# but they go back at the start of the next thing
+#
+like(
+  intercept {
+    Test2::Log::Log4perl->start();
+
+    $logger->debug("ignore me");
+    $logger->trace("ignore ignore ignore");
+    $logger->info("ignore me too");
+    $logger->warn("ignore me as well");
+    $logger->error("ignore with pleasure");
+    $logger->fatal("ignore this finally");
+
+    Test2::Log::Log4perl->end();
+  },
+  array {
+      fail_events Ok => sub {
+        call pass => 0;
+      };
+      event Diag => { message => qr/Unexpected debug of type 'Foo'/s };
+      event Diag => { message => qr/ignore me/s };
+      end;
+  },
+  "reset ignore_priority",
+);
+
+########################################################
+# test that we ignore some priorities forever
+
+like(
+  intercept {
+    Test2::Log::Log4perl->start(
+      # this should be overriden
+      ignore_priority => "error",
+    );
+
+    Test2::Log::Log4perl->ignore_priority("warn");
+
+    $tlogger->error("my hair is on fire!");
+    $logger->debug("ignore me");
+    $logger->trace("ignore ignore ignore");
+    $logger->info("ignore me too");
+    $logger->warn("ignore me as well");
+    $logger->error("my hair is on fire!");
+
+    Test2::Log::Log4perl->end();
+  },
+  array {
+      event Ok => sub {
+        call pass => 1;
+      };
+      end;
+  },
+  "global ignore_priority",
+);
+
+########################################################
 # and they don't go back, the ignore priority
 # should still be set
 
-test_out("ok 2 - Log4perl test");
+like(
+  intercept {
+    Test2::Log::Log4perl->start();
 
-Test2::Log::Log4perl->start();
+    $tlogger->error("my hair is on fire!");
+    $logger->debug("ignore me");
+    $logger->trace("ignore ignore ignore");
+    $logger->info("ignore me too");
+    $logger->warn("ignore me as well");
+    $logger->error("my hair is on fire!");
 
-$tlogger->error("my hair is on fire!");
-$logger->debug("ignore me");
-$logger->trace("ignore ignore ignore");
-$logger->info("ignore me too");
-$logger->warn("ignore me as well");
-$logger->error("my hair is on fire!");
-
-Test2::Log::Log4perl->end();
-
+    Test2::Log::Log4perl->end();
+  },
+  array {
+      event Ok => sub {
+        call pass => 1;
+      };
+      end;
+  },
+  "ignore_priority still set",
+);
+########################################################
 # though we can turn them off with ignore nothing
 
-Test2::Log::Log4perl->start();
+like(
+  intercept {
+    Test2::Log::Log4perl->start();
+    Test2::Log::Log4perl->ignore_priority("nothing");
 
-Test2::Log::Log4perl->ignore_priority("nothing");
+    $tlogger->error("my hair is on fire!");
+    $logger->debug("ignore me");
+    $logger->trace("ignore ignore ignore");
+    $logger->info("ignore me too");
+    $logger->warn("ignore me as well");
+    $logger->error("my hair is on fire!");
 
-test_out("not ok 3 - Log4perl test");
-test_fail(+16);
-test_diag("Message 1 logged wasn't what we expected:");
-test_diag(" priority was 'debug'");
-test_diag("          not 'error'");
-test_diag("  message was 'ignore me'");
-test_diag("          not 'my hair is on fire!'");
-test_diag(" (Offending log call from line ".(__LINE__+4)." in ".filename().")");
-Test2::Log::Log4perl->start();
+    Test2::Log::Log4perl->end();
+  },
+  array {
+      fail_events Ok => sub {
+        call pass => 0;
+      };
+      event Diag => { message => qr/{message}.*{priority}/s };
+      end;
+  },
+  "ignore_priority nothing",
+);
 
-$tlogger->error("my hair is on fire!");
-$logger->debug("ignore me");
-$logger->trace("ignore ignore ignore");
-$logger->info("ignore me too");
-$logger->warn("ignore me as well");
-$logger->error("my hair is on fire!");
-
-Test2::Log::Log4perl->end();
-
+########################################################
 # and that's still set next time
 
-Test2::Log::Log4perl->start();
+like(
+  intercept {
+    Test2::Log::Log4perl->start();
 
-test_out("not ok 4 - Log4perl test");
-test_fail(+17);
-test_diag("Message 1 logged wasn't what we expected:");
-test_diag(" priority was 'debug'");
-test_diag("          not 'error'");
-test_diag("  message was 'ignore me'");
-test_diag("          not 'my hair is on fire!'");
-test_diag(" (Offending log call from line ".(__LINE__+5)." in ".filename().")");
+    $tlogger->error("my hair is on fire!");
+    $logger->debug("ignore me");
+    $logger->trace("ignore ignore ignore");
+    $logger->info("ignore me too");
+    $logger->warn("ignore me as well");
+    $logger->error("my hair is on fire!");
 
-Test2::Log::Log4perl->start();
+    Test2::Log::Log4perl->end();
+  },
+  array {
+      fail_events Ok => sub {
+        call pass => 0;
+      };
+      event Diag => { message => qr/{message}.*{priority}/s };
+      end;
+  },
+  "ignore_priority nothing persists",
+);
 
-$tlogger->error("my hair is on fire!");
-$logger->debug("ignore me");
-$logger->trace("ignore ignore ignore");
-$logger->info("ignore me too");
-$logger->warn("ignore me as well");
-$logger->error("my hair is on fire!");
-
-Test2::Log::Log4perl->end();
-
+########################################################
 # and we can ignore everything
 
-Test2::Log::Log4perl->start();
-Test2::Log::Log4perl->ignore_priority("everything");
+like(
+  intercept {
+    Test2::Log::Log4perl->start();
+    Test2::Log::Log4perl->ignore_priority("everything");
 
-test_out("ok 5 - Log4perl test");
+    $logger->debug("ignore me");
+    $logger->info("ignore me too");
+    $logger->trace("ignore ignore ignore");
+    $logger->warn("ignore me as well");
+    $logger->error("ignore with pleasure");
+    $logger->fatal("ignore this finally");
 
-$logger->debug("ignore me");
-$logger->info("ignore me too");
-$logger->trace("ignore ignore ignore");
-$logger->warn("ignore me as well");
-$logger->error("ignore with pleasure");
-$logger->fatal("ignore this finally");
+    Test2::Log::Log4perl->end();
+  },
+  array {
+      end;
+  },
+  "ignore_priority everything makes zero tests",
+);
 
-Test2::Log::Log4perl->end();
-
+########################################################
 # and things are still ignored
 
-Test2::Log::Log4perl->start();
-Test2::Log::Log4perl->ignore_priority("everything");
+like(
+  intercept {
+    Test2::Log::Log4perl->start();
 
-test_out("ok 6 - Log4perl test");
+    $logger->debug("ignore me");
+    $logger->info("ignore me too");
+    $logger->trace("ignore ignore ignore");
+    $logger->warn("ignore me as well");
+    $logger->error("ignore with pleasure");
+    $logger->fatal("ignore this finally");
 
-$logger->debug("ignore me");
-$logger->trace("ignore ignore ignore");
-$logger->info("ignore me too");
-$logger->warn("ignore me as well");
-$logger->error("ignore with pleasure");
-$logger->fatal("ignore this finally");
+    Test2::Log::Log4perl->end();
+  },
+  array {
+      end;
+  },
+  "ignore_priority everything persits",
+);
 
-Test2::Log::Log4perl->end();
-
+########################################################
 # and we can ignore nothing
 
-Test2::Log::Log4perl->start();
-Test2::Log::Log4perl->ignore_priority("nothing");
+like(
+  intercept {
+    Test2::Log::Log4perl->start();
+    Test2::Log::Log4perl->ignore_priority("nothing");
 
-test_out("ok 7 - Log4perl test");
+    $tlogger->debug("don't ignore me");
+    $tlogger->trace("no ignore no ignore no ignore");
+    $tlogger->info("don't ignore me too");
+    $tlogger->warn("don't ignore me as well");
+    $tlogger->error("don't ignore with pleasure");
+    $tlogger->fatal("don't ignore this finally");
 
-$tlogger->debug("don't ignore me");
-$tlogger->trace("no ignore no ignore no ignore");
-$tlogger->info("don't ignore me too");
-$tlogger->warn("don't ignore me as well");
-$tlogger->error("don't ignore with pleasure");
-$tlogger->fatal("don't ignore this finally");
-$logger->debug("don't ignore me");
-$logger->trace("no ignore no ignore no ignore");
-$logger->info("don't ignore me too");
-$logger->warn("don't ignore me as well");
-$logger->error("don't ignore with pleasure");
-$logger->fatal("don't ignore this finally");
+    $logger->debug("don't ignore me");
+    $logger->trace("no ignore no ignore no ignore");
+    $logger->info("don't ignore me too");
+    $logger->warn("don't ignore me as well");
+    $logger->error("don't ignore with pleasure");
+    $logger->fatal("don't ignore this finally");
 
-Test2::Log::Log4perl->end();
+    Test2::Log::Log4perl->end();
+  },
+  array {
+      event Ok => { pass => 1 };
+      event Ok => { pass => 1 };
+      event Ok => { pass => 1 };
+      event Ok => { pass => 1 };
+      event Ok => { pass => 1 };
+      event Ok => { pass => 1 };
+      end;
+  },
+  "ignore_priority nothing",
+);
 
+########################################################
+# and we can ignore nothing
 # and that remains set too
 
-Test2::Log::Log4perl->start();
+like(
+  intercept {
+    Test2::Log::Log4perl->start();
 
-test_out("ok 8 - Log4perl test");
+    $tlogger->debug("don't ignore me");
+    $tlogger->trace("no ignore no ignore no ignore");
+    $tlogger->info("don't ignore me too");
+    $tlogger->warn("don't ignore me as well");
+    $tlogger->error("don't ignore with pleasure");
+    $tlogger->fatal("don't ignore this finally");
 
-$tlogger->debug("don't ignore me");
-$tlogger->trace("no ignore no ignore no ignore");
-$tlogger->info("don't ignore me too");
-$tlogger->warn("don't ignore me as well");
-$tlogger->error("don't ignore with pleasure");
-$tlogger->fatal("don't ignore this finally");
-$logger->debug("don't ignore me");
-$logger->trace("no ignore no ignore no ignore");
-$logger->info("don't ignore me too");
-$logger->warn("don't ignore me as well");
-$logger->error("don't ignore with pleasure");
-$logger->fatal("don't ignore this finally");
+    $logger->debug("don't ignore me");
+    $logger->trace("no ignore no ignore no ignore");
+    $logger->info("don't ignore me too");
+    $logger->warn("don't ignore me as well");
+    $logger->error("don't ignore with pleasure");
+    $logger->fatal("don't ignore this finally");
 
-Test2::Log::Log4perl->end();
+    Test2::Log::Log4perl->end();
+  },
+  array {
+      event Ok => { pass => 1 };
+      event Ok => { pass => 1 };
+      event Ok => { pass => 1 };
+      event Ok => { pass => 1 };
+      event Ok => { pass => 1 };
+      event Ok => { pass => 1 };
+      end;
+  },
+  "ignore_priority persists",
+);
 
-test_test("ignoring priority forever");
-
-##################################
-##################################
-
-sub filename
-{
-  return (caller)[1];
-}
+done_testing;

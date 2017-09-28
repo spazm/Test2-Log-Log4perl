@@ -20,7 +20,7 @@ Test2::Log::Log4perl - test log4perl
 =head1 SYNOPSIS
 
   # setup l4p
-  use Log::Log4Perl;
+  use Log::Log4perl;
   # do your normal Log::Log4Perl setup here
   use Test2::Log::Log4perl;
 

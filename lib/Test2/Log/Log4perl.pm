@@ -225,7 +225,7 @@ sub reset_data {
   $class->clear_logged();
 }
 
-sub _set_ignore_priority {
+sub _set_intercept_ignore_priority {
   my ($class, %args) = @_;
 
   my $ignore_priority = $args{ignore_priority};
@@ -278,7 +278,7 @@ sub start
   $class->reset_data();
   $class->interception_class->reset_temp;
 
-  $class->_set_ignore_priority(%args);
+  $class->_set_intercept_ignore_priority(%args);
 
   # turn on the interception code
   $class->_turn_on_intercept_code();

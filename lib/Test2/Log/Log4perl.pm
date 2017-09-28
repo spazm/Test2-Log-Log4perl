@@ -549,9 +549,25 @@ sub ignore_nothing
   $class->ignore_priority($ALL);
 }
 
-sub interception_class { "Log::Log4perl::Logger::Interception" }
-sub ignore_all_class   { "Log::Log4perl::Logger::IgnoreAll"    }
-sub original_class     { "Log::Log4perl::Logger"               }
+{
+  my $interception_class = "Log::Log4perl::Logger::Interception";
+  my $ignore_all_class   = "Log::Log4perl::Logger::IgnoreAll";
+  my $original_class     = "Log::Log4perl::Logger";
+
+  sub interception_class {
+    my $class = shift;
+    $interception_class = shift if @_;
+    $interception_class;
+  }
+
+  sub ignore_all_class   {
+    my $class = shift;
+    $ignore_all_class = shift if @_;
+    $ignore_all_class;
+  }
+
+  sub original_class     { $original_class }
+}
 
 sub DESTROY {
   return if $_[0]->interception_class->ended;
@@ -628,6 +644,33 @@ sub _log_message {
 };
 
 sub _cur_filename { (caller)[1] }
+
+1;
+
+package Log::Log4perl::Logger::Interception::JSON;
+use base qw(Log::Log4perl::Logger::Interception);
+
+use Try::Tiny;
+use JSON qw(from_json);
+
+use Carp;
+our @CARP_NOT = qw(Test2::Log::Log4perl);
+
+sub _log_message {
+  my ($self, $msg) = @_;
+
+  my $raw_message = $msg->{message};
+  try {
+    my $decoded_message = from_json($raw_message);
+    $msg->{message}     = $decoded_message;
+    $msg->{raw_message} = $raw_message;
+  } catch {
+    carp("Failed to decode message:$raw_message");
+  };
+
+  $self->SUPER::_log_message($msg);
+};
+
 
 1;
 

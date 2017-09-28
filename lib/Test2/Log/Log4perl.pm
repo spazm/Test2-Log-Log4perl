@@ -15,7 +15,7 @@ our $VERSION = '0.32';
 
 =head1 NAME
 
-Test::Log::Log4perl - test log4perl
+Test2::Log::Log4perl - test log4perl
 
 =head1 SYNOPSIS
 
@@ -54,7 +54,7 @@ with Log::Log4perl.  It checks that we get what, and only what, we
 expect logged by your code.
 
 The basic process is very simple.  Within your test script you get
-one or more loggers from B<Test::Log::Log4perl> with the C<get_logger> method
+one or more loggers from B<Test2::Log::Log4perl> with the C<get_logger> method
 just like you would with B<Log::Log4perl>.  You're going to use these
 loggers to declare what you think the code you're going to test should
 be logging.

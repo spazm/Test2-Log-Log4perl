@@ -3,49 +3,57 @@
 use strict;
 use warnings;
 
-use Log::Log4perl;
-# do some setup here...honest guv
+use Test2::V0;
+use Test2::Tools::Explain qw(explain);
+use Test2::Tools::Exception qw/lives dies/;
 
-use Test::More tests => 2;
-use Test::Builder::Tester;
-use Test::Log::Log4perl;
-use Test::Exception;
+use Log::Log4perl;
+use Test2::Log::Log4perl;
 
 my $logger   = Log::Log4perl->get_logger("Foo");
-my $tlogger  = Test::Log::Log4perl->get_logger("Foo");
+my $tlogger  = Test2::Log::Log4perl->get_logger("Foo");
 
 ########################################################
 
-test_out("ok 1 - Log4perl test");
-
-Test::Log::Log4perl->start();
-$tlogger->error(qr/hair/);
-$logger->error("my hair is on fire!");
-Test::Log::Log4perl->end();
-
-test_test("basic qr test");
+like(
+  intercept {
+    Test2::Log::Log4perl->start();
+    $tlogger->error(qr/hair/);
+    $logger->error("my hair is on fire!");
+    Test2::Log::Log4perl->end();
+  },
+  array {
+      event Ok => sub {
+        call pass => 1
+      };
+      end;
+  },
+  "basic qr test",
+);
 
 ########################################################
 
 my $DEFAULT_FLAGS = $] < 5.013005 ? '-xism' : '^';
 
-test_out("not ok 1 - Log4perl test");
-test_fail(+9);
-test_diag("Message 1 logged wasn't what we expected:");
-test_diag("  message was 'my hair is on fire!'");
-test_diag("     not like '(?$DEFAULT_FLAGS:tree)'");
-test_diag(" (Offending log call from line ".(__LINE__+4)." in ".filename().")");
-
-Test::Log::Log4perl->start();
-$tlogger->error(qr/tree/);
-$logger->error("my hair is on fire!");
-Test::Log::Log4perl->end();
-
-test_test("getting wrong message");
+like(
+  intercept {
+    Test2::Log::Log4perl->start();
+    $tlogger->error(qr/tree/);
+    $logger->error("my hair is on fire!");
+    Test2::Log::Log4perl->end();
+  },
+  array {
+      fail_events Ok => sub {
+        call pass => 0
+      };
+      event Diag => {
+        message => qr/{message}.*my hair is on fire!.*tree/
+      };
+      end;
+  },
+  "getting wrong message",
+);
 
 ########################################################
 
-sub filename
-{
-  return (caller)[1];
-}
+done_testing;

@@ -10,13 +10,11 @@ use Test2::Tools::Exception qw/lives dies/;
 use Log::Log4perl;
 use Test2::Log::Log4perl;
 
-# configure two loggers:
-my $logger     = Log::Log4perl->get_logger("Foo");
-my $logger_bar = Log::Log4perl->get_logger("Bar");
+my $interception_class = "Test2::Log::Log4perl::Logger::Interception::JSON";
+Test2::Log::Log4perl->interception_class($interception_class);
 
-# configure two log watchers
+my $logger     = Log::Log4perl->get_logger("Foo");
 my $tlogger    = Test2::Log::Log4perl->get_logger("Foo");
-my $t2logger   = Test2::Log::Log4perl->get_logger("Bar");
 
 # track test line number
 my $line;
@@ -26,8 +24,8 @@ my $line;
 like(
   intercept {
     Test2::Log::Log4perl->start();
-    $tlogger->error("my hair is on fire!");
-    $logger->error("my hair is on fire!");
+    $tlogger->error({ key => "value" });
+    $logger->error('{"key":"value"}');
     Test2::Log::Log4perl->end(); $line = __LINE__;
   },
   array {
@@ -38,8 +36,32 @@ like(
     };
     end;
   },
-  "basic ok test"
+  "basic json ok t est"
 );
+
+########################################################
+
+$line = undef;
+like(
+  intercept {
+    Test2::Log::Log4perl->start();
+    $tlogger->error({ key => "value" });
+    $logger->error('"INVALIDJSON"');
+    Test2::Log::Log4perl->end(); $line = __LINE__;
+  },
+  array {
+    #event Ok => sub {
+    #  call pass => 1;
+    #  prop file => __FILE__;
+    #  prop line => $line;
+    #;
+    #end;
+  },
+  "invalid json decode"
+);
+
+done_testing;
+__END__
 
 ########################################################
 

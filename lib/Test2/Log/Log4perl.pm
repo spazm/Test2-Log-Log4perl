@@ -189,6 +189,12 @@ sub clear_expected {
 }
 
 # note, this will always be @Test2::Log::Log4perl::logged, even in subclass.
+
+sub log {
+  my ($class, $msg) = @_;
+  push @logged, $msg;
+}
+
 sub logged {
   my $class = shift;
   \@logged
@@ -550,19 +556,27 @@ sub ignore_nothing
 }
 
 {
-  my $interception_class = "Log::Log4perl::Logger::Interception";
-  my $ignore_all_class   = "Log::Log4perl::Logger::IgnoreAll";
+  my $interception_class = "Test2::Log::Log4perl::Logger::Interception";
+  my $ignore_all_class   = "Test2::Log::Log4perl::Logger::IgnoreAll";
   my $original_class     = "Log::Log4perl::Logger";
+  eval "require $interception_class";
+  eval "require $ignore_all_class";
 
   sub interception_class {
     my $class = shift;
-    $interception_class = shift if @_;
+    if (@_) {
+      $interception_class = shift;
+      eval "require $interception_class";
+    }
     $interception_class;
   }
 
   sub ignore_all_class   {
     my $class = shift;
-    $ignore_all_class = shift if @_;
+    if (@_) {
+      $ignore_all_class = shift;
+      require($ignore_all_class);
+    }
     $ignore_all_class;
   }
 
@@ -574,115 +588,6 @@ sub DESTROY {
   goto $_[0]->can('end');
 }
 
-###################################################################################################
-
-package Log::Log4perl::Logger::Interception;
-use base qw(Log::Log4perl::Logger);
-use Log::Log4perl qw(:levels);
-
-our %temp;
-our %perm;
-
-sub reset_temp { %temp = () }
-sub set_temp { my ($class, $key, $val) = @_; $temp{$key} = $val }
-sub set_perm { my ($class, $key, $val) = @_; $perm{$key} = $val }
-sub ended { my ($class) = @_; $temp{ended} }
-# all the basic logging functions
-foreach my $level (qw(trace debug info warn error fatal))
-{
-  no strict 'refs';
-
-  # we need to pass the number to log
-  my $level_int = Log::Log4perl::Level::to_priority(uc($level));
-  *{"is_".$level} = sub { 1 };
-  *{$level} = sub {
-   my $self = shift;
-   $self->log($level_int, @_)
-  }
-}
-
-sub log
-{
-  my $self     = shift;
-  my $priority = shift;
-  my $message  = join '', grep defined, @_;
-
-  # are we logging anything or what?
-  if ($priority <= ($temp{ignore_priority} || 0) or
-      $priority <= ($perm{ignore_priority} || 0))
-    { return }
-
-  # what's that priority called then?
-  my $priority_name = lc( Log::Log4perl::Level::to_level($priority) );
-
-  # find the filename and line
-  my ($filename, $line);
-  my $cur_filename = _cur_filename();
-  my $level = 1;
-  do {
-    (undef, $filename, $line) = caller($level++);
-  } while ($filename eq $cur_filename || $filename eq $INC{"Log/Log4perl/Logger.pm"});
-
- # prepare message
- my $msg = {
-    category => $self->{category},
-    priority => $priority_name,
-    message  => $message,
-    filename => $filename,
-    line     => $line,
-  };
-
-  # log it
-  $self->_log_message($msg);
-
-  return;
-}
-
-sub _log_message {
-  my ($self, $msg) = @_;
-  push @Test2::Log::Log4perl::logged, $msg;
-};
-
-sub _cur_filename { (caller)[1] }
-
-1;
-
-package Log::Log4perl::Logger::Interception::JSON;
-use base qw(Log::Log4perl::Logger::Interception);
-
-use Try::Tiny;
-use JSON qw(from_json);
-
-use Carp;
-our @CARP_NOT = qw(Test2::Log::Log4perl);
-
-sub _log_message {
-  my ($self, $msg) = @_;
-
-  my $raw_message = $msg->{message};
-  try {
-    my $decoded_message = from_json($raw_message);
-    $msg->{message}     = $decoded_message;
-    $msg->{raw_message} = $raw_message;
-  } catch {
-    carp("Failed to decode message:$raw_message");
-  };
-
-  $self->SUPER::_log_message($msg);
-};
-
-
-1;
-
-package Log::Log4perl::Logger::IgnoreAll;
-use base qw(Log::Log4perl::Logger);
-
-# all the functions we don't want
-foreach my $level (qw(trace debug info warn error fatal log))
-{
-  no strict 'refs';
-  *{$level} = sub { return () }
-}
 
 =head1 BUGS
 
